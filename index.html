@@ -79,8 +79,14 @@
     }
 
     .board-wrap {
+      position: relative;
       padding: 16px;
       overflow: auto;
+    }
+
+    .board-stage {
+      position: relative;
+      min-width: 560px;
     }
 
     .board {
@@ -88,10 +94,33 @@
       display: grid;
       grid-template-columns: repeat(var(--cols), minmax(44px, 1fr));
       gap: 8px;
-      min-width: 560px;
+    }
+
+    .connection-line {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      overflow: visible;
+    }
+
+    .connection-line polyline {
+      fill: none;
+      stroke: var(--rose);
+      stroke-width: 6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 4px 8px rgba(216, 76, 103, 0.26));
+      stroke-dasharray: 1;
+      stroke-dashoffset: 1;
+      animation: drawLine 320ms ease forwards;
     }
 
     .tile {
+      position: relative;
+      z-index: 1;
       aspect-ratio: 1;
       border: 1px solid #cfd7e4;
       border-radius: 8px;
@@ -123,6 +152,34 @@
       pointer-events: none;
       opacity: 0;
       transform: scale(0.86);
+    }
+
+    .tile.pop {
+      z-index: 3;
+      animation: popAway 420ms ease forwards;
+    }
+
+    @keyframes drawLine {
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+
+    @keyframes popAway {
+      0% {
+        opacity: 1;
+        transform: scale(1);
+      }
+      42% {
+        opacity: 1;
+        transform: scale(1.22);
+        border-color: var(--rose);
+        background: linear-gradient(180deg, #fff, #ffd5de);
+      }
+      100% {
+        opacity: 0;
+        transform: scale(0.72);
+      }
     }
 
     .side {
@@ -252,6 +309,10 @@
         grid-template-columns: repeat(var(--cols), minmax(30px, 1fr));
       }
 
+      .board-stage {
+        min-width: 0;
+      }
+
       .tile {
         border-radius: 6px;
       }
@@ -269,7 +330,10 @@
 
     <section class="shell" aria-label="连连看游戏">
       <div class="board-wrap">
-        <div id="board" class="board" aria-label="游戏棋盘"></div>
+        <div class="board-stage">
+          <svg id="connectionLine" class="connection-line" aria-hidden="true"></svg>
+          <div id="board" class="board" aria-label="游戏棋盘"></div>
+        </div>
       </div>
 
       <aside class="side" aria-label="游戏控制">
@@ -308,6 +372,7 @@
     };
 
     const boardEl = document.querySelector("#board");
+    const lineEl = document.querySelector("#connectionLine");
     const scoreEl = document.querySelector("#score");
     const leftEl = document.querySelector("#left");
     const comboEl = document.querySelector("#combo");
@@ -340,6 +405,7 @@
       locked = false;
       tiles = makeDeck(rows * cols);
       renderBoard();
+      clearConnectionLine();
       updateStats();
       setMessage("点击两张相同的牌开始。");
       clearInterval(timer);
@@ -377,6 +443,7 @@
       const tile = tiles[index];
       if (!tile || tile.matched) return;
       clearHints();
+      clearConnectionLine();
 
       if (selected === index) {
         selected = null;
@@ -392,19 +459,28 @@
 
       const previous = selected;
       selected = null;
-      if (tiles[previous].value === tile.value && canConnect(previous, index)) {
-        tiles[previous].matched = true;
-        tile.matched = true;
+      const path = tiles[previous].value === tile.value ? findConnectionPath(previous, index) : null;
+      if (path) {
+        locked = true;
         combo += 1;
         score += 10 + combo * 2;
         setMessage(combo > 2 ? `连击 ${combo}！` : "配对成功。");
-        updateTileClasses();
+        showConnectionLine(path);
+        animateMatchedTiles(previous, index);
         updateStats();
-        if (tiles.every(item => item.matched)) {
-          finish(true);
-        } else {
-          ensureMove();
-        }
+        setTimeout(() => {
+          tiles[previous].matched = true;
+          tile.matched = true;
+          clearConnectionLine();
+          locked = false;
+          updateTileClasses();
+          updateStats();
+          if (tiles.every(item => item.matched)) {
+            finish(true);
+          } else {
+            ensureMove();
+          }
+        }, 430);
       } else {
         combo = 0;
         locked = true;
@@ -419,6 +495,10 @@
     }
 
     function canConnect(a, b) {
+      return Boolean(findConnectionPath(a, b));
+    }
+
+    function findConnectionPath(a, b) {
       const start = toPoint(a);
       const end = toPoint(b);
       const grid = buildGrid();
@@ -437,13 +517,13 @@
         const next = { r: start.r + dir.r, c: start.c + dir.c };
         if (isPassable(next, end, grid)) {
           visited[next.r][next.c][directionIndex] = 0;
-          queue.push({ ...next, dir: directionIndex, turns: 0 });
+          queue.push({ ...next, dir: directionIndex, turns: 0, path: [start, next] });
         }
       });
 
       while (queue.length) {
         const current = queue.shift();
-        if (current.r === end.r && current.c === end.c) return true;
+        if (current.r === end.r && current.c === end.c) return simplifyPath(current.path);
 
         directions.forEach((dir, directionIndex) => {
           const turns = current.turns + (directionIndex === current.dir ? 0 : 1);
@@ -452,11 +532,85 @@
           if (!isPassable(next, end, grid)) return;
           if (visited[next.r][next.c][directionIndex] <= turns) return;
           visited[next.r][next.c][directionIndex] = turns;
-          queue.push({ ...next, dir: directionIndex, turns });
+          queue.push({ ...next, dir: directionIndex, turns, path: [...current.path, next] });
         });
       }
 
-      return false;
+      return null;
+    }
+
+    function simplifyPath(path) {
+      if (path.length <= 2) return path;
+      const result = [path[0]];
+      for (let i = 1; i < path.length - 1; i += 1) {
+        const previous = path[i - 1];
+        const current = path[i];
+        const next = path[i + 1];
+        const sameRow = previous.r === current.r && current.r === next.r;
+        const sameCol = previous.c === current.c && current.c === next.c;
+        if (!sameRow && !sameCol) result.push(current);
+      }
+      result.push(path[path.length - 1]);
+      return result;
+    }
+
+    function showConnectionLine(path) {
+      const points = path.map(pointToPixel);
+      const boardRect = boardEl.getBoundingClientRect();
+      lineEl.setAttribute("viewBox", `0 0 ${boardRect.width} ${boardRect.height}`);
+      lineEl.innerHTML = "";
+
+      const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+      polyline.setAttribute("points", points.map(point => `${point.x},${point.y}`).join(" "));
+      lineEl.append(polyline);
+
+      const length = polyline.getTotalLength();
+      polyline.style.strokeDasharray = length;
+      polyline.style.strokeDashoffset = length;
+    }
+
+    function clearConnectionLine() {
+      lineEl.innerHTML = "";
+    }
+
+    function animateMatchedTiles(first, second) {
+      [first, second].forEach(index => {
+        const node = boardEl.children[index];
+        node.classList.add("pop");
+        node.classList.remove("selected");
+      });
+    }
+
+    function pointToPixel(point) {
+      const centers = [];
+      tiles.forEach((_, index) => {
+        const rect = boardEl.children[index].getBoundingClientRect();
+        const boardRect = boardEl.getBoundingClientRect();
+        centers[index] = {
+          x: rect.left - boardRect.left + rect.width / 2,
+          y: rect.top - boardRect.top + rect.height / 2
+        };
+      });
+
+      const first = centers[0];
+      const second = centers[1] || first;
+      const below = centers[cols] || first;
+      const lastInRow = centers[cols - 1] || first;
+      const lastRowFirst = centers[(rows - 1) * cols] || first;
+      const colStep = second.x - first.x || boardEl.children[0].getBoundingClientRect().width;
+      const rowStep = below.y - first.y || boardEl.children[0].getBoundingClientRect().height;
+
+      let x;
+      let y;
+      if (point.c === 0) x = first.x - colStep;
+      else if (point.c === cols + 1) x = lastInRow.x + colStep;
+      else x = centers[pointToIndex({ r: 1, c: point.c })].x;
+
+      if (point.r === 0) y = first.y - rowStep;
+      else if (point.r === rows + 1) y = lastRowFirst.y + rowStep;
+      else y = centers[pointToIndex({ r: point.r, c: 1 })].y;
+
+      return { x, y };
     }
 
     function buildGrid() {
@@ -475,6 +629,10 @@
         r: Math.floor(index / cols) + 1,
         c: (index % cols) + 1
       };
+    }
+
+    function pointToIndex(point) {
+      return (point.r - 1) * cols + point.c - 1;
     }
 
     function isPassable(point, end, grid) {
