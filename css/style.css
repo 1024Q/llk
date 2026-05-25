@@ -247,6 +247,34 @@ body.paused .board-stage::after {
   grid-template-columns: repeat(3, 1fr);
 }
 
+.turn-control {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.turn-control span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.turn-control strong {
+  color: var(--teal-dark);
+  font-size: 15px;
+}
+
+.turn-control input {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: var(--rose);
+}
+
 button,
 select {
   min-height: 42px;

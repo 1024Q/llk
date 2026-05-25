@@ -11,7 +11,7 @@
     <header>
       <div>
         <h1>连连看</h1>
-        <p class="tagline">找到相同图案，用不超过两次转弯的路线消除它们。</p>
+        <p class="tagline">找到相同图案，按当前转弯次数规则连接并消除它们。</p>
       </div>
     </header>
 
@@ -40,6 +40,12 @@
           <button type="button" data-level="normal" class="active">普通</button>
           <button type="button" data-level="hard">困难</button>
         </div>
+
+        <label class="turn-control" for="turnLimit">
+          <span>转弯次数</span>
+          <strong id="turnLimitValue">2 次</strong>
+          <input type="range" id="turnLimit" min="2" max="5" step="1" value="2">
+        </label>
 
         <div class="controls">
           <button type="button" id="newGame" class="primary">新游戏</button>

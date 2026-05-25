@@ -18,9 +18,12 @@ const messageEl = document.querySelector("#message");
 const levelButtons = document.querySelectorAll("[data-level]");
 const pauseButton = document.querySelector("#pause");
 const soundButton = document.querySelector("#sound");
+const turnLimitInput = document.querySelector("#turnLimit");
+const turnLimitValueEl = document.querySelector("#turnLimitValue");
 
 const bestScoreKey = "llk-best-score";
 const soundKey = "llk-sound-enabled";
+const turnLimitKey = "llk-turn-limit";
 
 let level = "normal";
 let stage = 1;
@@ -37,6 +40,7 @@ let locked = false;
 let paused = false;
 let bestScore = Number(localStorage.getItem(bestScoreKey) || 0);
 let soundEnabled = localStorage.getItem(soundKey) !== "off";
+let turnLimit = clampTurnLimit(Number(localStorage.getItem(turnLimitKey) || 2));
 let audioContext = null;
 
 function startGame(resetProgress = true) {
@@ -59,7 +63,7 @@ function startGame(resetProgress = true) {
   clearConnectionLine();
   updateControlStates();
   updateStats();
-  setMessage(`第 ${stage} 关开始，清空牌面进入下一关。`);
+  setMessage(`第 ${stage} 关开始，当前最多可转弯 ${turnLimit} 次。`);
   clearInterval(timer);
   timer = setInterval(tick, 1000);
   ensureMove();
@@ -195,7 +199,7 @@ function findConnectionPath(a, b) {
 
     directions.forEach((dir, directionIndex) => {
       const turns = current.turns + (directionIndex === current.dir ? 0 : 1);
-      if (turns > 2) return;
+      if (turns > turnLimit) return;
       const next = { r: current.r + dir.r, c: current.c + dir.c };
       if (!isPassable(next, end, grid)) return;
       if (visited[next.r][next.c][directionIndex] <= turns) return;
@@ -467,6 +471,25 @@ function updateControlStates() {
   document.body.classList.toggle("paused", paused);
   pauseButton.textContent = paused ? "继续" : "暂停";
   soundButton.textContent = soundEnabled ? "音效：开" : "音效：关";
+  turnLimitInput.value = turnLimit;
+  turnLimitValueEl.textContent = `${turnLimit} 次`;
+}
+
+function changeTurnLimit() {
+  turnLimit = clampTurnLimit(Number(turnLimitInput.value));
+  localStorage.setItem(turnLimitKey, String(turnLimit));
+  selected = null;
+  clearHints();
+  clearConnectionLine();
+  updateTileClasses();
+  updateControlStates();
+  setMessage(`已设置为最多转弯 ${turnLimit} 次。`);
+  playSound("tap");
+  ensureMove();
+}
+
+function clampTurnLimit(value) {
+  return Math.min(5, Math.max(2, Number.isFinite(value) ? value : 2));
 }
 
 function unlockAudio() {
@@ -527,6 +550,7 @@ document.querySelector("#hint").addEventListener("click", showHint);
 document.querySelector("#shuffle").addEventListener("click", () => shuffleRemaining(true));
 pauseButton.addEventListener("click", togglePause);
 soundButton.addEventListener("click", toggleSound);
+turnLimitInput.addEventListener("input", changeTurnLimit);
 levelButtons.forEach(button => {
   button.addEventListener("click", () => {
     unlockAudio();
