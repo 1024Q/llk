@@ -7,6 +7,8 @@ const levels = {
 
 const boardEl = document.querySelector("#board");
 const lineEl = document.querySelector("#connectionLine");
+const stageEl = document.querySelector("#stage");
+const bestScoreEl = document.querySelector("#bestScore");
 const scoreEl = document.querySelector("#score");
 const leftEl = document.querySelector("#left");
 const comboEl = document.querySelector("#combo");
@@ -14,8 +16,14 @@ const timeEl = document.querySelector("#time");
 const timeBarEl = document.querySelector("#timeBar");
 const messageEl = document.querySelector("#message");
 const levelButtons = document.querySelectorAll("[data-level]");
+const pauseButton = document.querySelector("#pause");
+const soundButton = document.querySelector("#sound");
+
+const bestScoreKey = "llk-best-score";
+const soundKey = "llk-sound-enabled";
 
 let level = "normal";
+let stage = 1;
 let rows = 0;
 let cols = 0;
 let seconds = 0;
@@ -26,25 +34,47 @@ let selected = null;
 let tiles = [];
 let timer = null;
 let locked = false;
+let paused = false;
+let bestScore = Number(localStorage.getItem(bestScoreKey) || 0);
+let soundEnabled = localStorage.getItem(soundKey) !== "off";
+let audioContext = null;
 
-function startGame() {
-  const config = levels[level];
+function startGame(resetProgress = true) {
+  if (resetProgress) {
+    stage = 1;
+    score = 0;
+    combo = 0;
+  }
+
+  const config = getStageConfig();
   rows = config.rows;
   cols = config.cols;
   seconds = config.seconds;
   timeLeft = seconds;
-  score = 0;
-  combo = 0;
   selected = null;
   locked = false;
+  paused = false;
   tiles = makeDeck(rows * cols);
   renderBoard();
   clearConnectionLine();
+  updateControlStates();
   updateStats();
-  setMessage("点击两张相同的牌开始。");
+  setMessage(`第 ${stage} 关开始，清空牌面进入下一关。`);
   clearInterval(timer);
   timer = setInterval(tick, 1000);
   ensureMove();
+}
+
+function getStageConfig() {
+  const base = levels[level];
+  const growth = Math.floor((stage - 1) / 2);
+  const stageRows = Math.min(base.rows + growth * 2, 10);
+  const stageCols = Math.min(base.cols + Math.floor((stage - 1) / 3) * 2, 12);
+  return {
+    rows: stageRows,
+    cols: stageRows * stageCols % 2 === 0 ? stageCols : stageCols + 1,
+    seconds: Math.max(75, base.seconds - (stage - 1) * 8 + growth * 12)
+  };
 }
 
 function makeDeck(total) {
@@ -73,9 +103,11 @@ function renderBoard() {
 }
 
 function chooseTile(index) {
-  if (locked || timeLeft <= 0) return;
+  if (locked || paused || timeLeft <= 0) return;
   const tile = tiles[index];
   if (!tile || tile.matched) return;
+  unlockAudio();
+  playSound("tap");
   clearHints();
   clearConnectionLine();
 
@@ -101,6 +133,7 @@ function chooseTile(index) {
     setMessage(combo > 2 ? `连击 ${combo}！` : "配对成功。");
     showConnectionLine(path);
     animateMatchedTiles(previous, index);
+    playSound("match");
     updateStats();
     setTimeout(() => {
       tiles[previous].matched = true;
@@ -120,6 +153,7 @@ function chooseTile(index) {
     locked = true;
     updateTileClasses();
     setMessage("这两张还连不上，换一组试试。");
+    playSound("miss");
     setTimeout(() => {
       locked = false;
       updateTileClasses();
@@ -217,9 +251,9 @@ function animateMatchedTiles(first, second) {
 
 function pointToPixel(point) {
   const centers = [];
+  const boardRect = boardEl.getBoundingClientRect();
   tiles.forEach((_, index) => {
     const rect = boardEl.children[index].getBoundingClientRect();
-    const boardRect = boardEl.getBoundingClientRect();
     centers[index] = {
       x: rect.left - boardRect.left + rect.width / 2,
       y: rect.top - boardRect.top + rect.height / 2
@@ -296,6 +330,7 @@ function ensureMove() {
 }
 
 function shuffleRemaining(showMessage = true) {
+  if (paused || locked || timeLeft <= 0) return;
   const indexes = [];
   const values = [];
   tiles.forEach((tile, index) => {
@@ -314,12 +349,14 @@ function shuffleRemaining(showMessage = true) {
   if (showMessage) {
     combo = 0;
     setMessage("已经洗牌。");
+    playSound("shuffle");
     updateStats();
     ensureMove();
   }
 }
 
 function showHint() {
+  if (paused || locked || timeLeft <= 0) return;
   clearHints();
   const move = findMove();
   if (!move) {
@@ -331,6 +368,7 @@ function showHint() {
   }
   move.forEach(index => boardEl.children[index].classList.add("hint"));
   setMessage("这两张可以连。");
+  playSound("hint");
   setTimeout(clearHints, 1200);
 }
 
@@ -348,6 +386,7 @@ function updateTileClasses() {
 }
 
 function tick() {
+  if (paused) return;
   timeLeft -= 1;
   updateStats();
   if (timeLeft <= 0) finish(false);
@@ -358,11 +397,30 @@ function finish(won) {
   locked = true;
   selected = null;
   updateTileClasses();
-  setMessage(won ? `全部消除！最终得分 ${score}。` : "时间到了，再开一局吧。");
+  if (won) {
+    const bonus = Math.max(0, timeLeft) + stage * 20;
+    score += bonus;
+    saveBestScore();
+    updateStats();
+    setMessage(`第 ${stage} 关完成！奖励 ${bonus} 分，即将进入下一关。`);
+    playSound("win");
+    setTimeout(() => {
+      stage += 1;
+      startGame(false);
+    }, 1300);
+    return;
+  }
+
+  saveBestScore();
+  updateStats();
+  setMessage(`时间到了，最终得分 ${score}。点新游戏再来一局。`);
+  playSound("over");
 }
 
 function updateStats() {
   const remaining = tiles.filter(tile => !tile.matched).length;
+  stageEl.textContent = stage;
+  bestScoreEl.textContent = bestScore;
   scoreEl.textContent = score;
   leftEl.textContent = remaining;
   comboEl.textContent = combo;
@@ -380,6 +438,77 @@ function setMessage(text) {
   messageEl.textContent = text;
 }
 
+function saveBestScore() {
+  if (score <= bestScore) return;
+  bestScore = score;
+  localStorage.setItem(bestScoreKey, String(bestScore));
+}
+
+function togglePause() {
+  if (timeLeft <= 0) return;
+  paused = !paused;
+  selected = null;
+  clearHints();
+  clearConnectionLine();
+  updateTileClasses();
+  updateControlStates();
+  setMessage(paused ? "已暂停，点继续恢复游戏。" : "继续游戏。");
+  playSound(paused ? "pause" : "resume");
+}
+
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  localStorage.setItem(soundKey, soundEnabled ? "on" : "off");
+  updateControlStates();
+  playSound("tap");
+}
+
+function updateControlStates() {
+  document.body.classList.toggle("paused", paused);
+  pauseButton.textContent = paused ? "继续" : "暂停";
+  soundButton.textContent = soundEnabled ? "音效：开" : "音效：关";
+}
+
+function unlockAudio() {
+  if (!soundEnabled || audioContext) return;
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return;
+  audioContext = new AudioCtor();
+}
+
+function playSound(type) {
+  if (!soundEnabled) return;
+  unlockAudio();
+  if (!audioContext) return;
+
+  const presets = {
+    tap: [420, 0.035, "triangle", 0.035],
+    match: [660, 0.09, "sine", 0.055],
+    miss: [170, 0.12, "sawtooth", 0.04],
+    hint: [520, 0.08, "triangle", 0.045],
+    shuffle: [300, 0.11, "square", 0.035],
+    pause: [220, 0.08, "sine", 0.035],
+    resume: [440, 0.08, "sine", 0.04],
+    win: [760, 0.16, "triangle", 0.07],
+    over: [130, 0.22, "sine", 0.05]
+  };
+  const [frequency, duration, wave, gainValue] = presets[type] || presets.tap;
+  const now = audioContext.currentTime;
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+
+  oscillator.type = wave;
+  oscillator.frequency.setValueAtTime(frequency, now);
+  if (type === "win") oscillator.frequency.exponentialRampToValueAtTime(frequency * 1.35, now + duration);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(gainValue, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start(now);
+  oscillator.stop(now + duration + 0.02);
+}
+
 function shuffleArray(array) {
   const result = [...array];
   for (let i = result.length - 1; i > 0; i -= 1) {
@@ -389,15 +518,24 @@ function shuffleArray(array) {
   return result;
 }
 
-document.querySelector("#newGame").addEventListener("click", startGame);
+document.querySelector("#newGame").addEventListener("click", () => {
+  unlockAudio();
+  playSound("tap");
+  startGame(true);
+});
 document.querySelector("#hint").addEventListener("click", showHint);
 document.querySelector("#shuffle").addEventListener("click", () => shuffleRemaining(true));
+pauseButton.addEventListener("click", togglePause);
+soundButton.addEventListener("click", toggleSound);
 levelButtons.forEach(button => {
   button.addEventListener("click", () => {
+    unlockAudio();
+    playSound("tap");
     level = button.dataset.level;
     levelButtons.forEach(item => item.classList.toggle("active", item === button));
-    startGame();
+    startGame(true);
   });
 });
 
-startGame();
+updateControlStates();
+startGame(true);

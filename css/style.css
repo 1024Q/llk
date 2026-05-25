@@ -82,6 +82,27 @@ h1 {
   min-width: 560px;
 }
 
+.board-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0);
+  transition: background 160ms ease;
+}
+
+body.paused .board-stage::after {
+  content: "已暂停";
+  display: grid;
+  place-items: center;
+  color: var(--teal-dark);
+  font-size: 30px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.72);
+}
+
 .board {
   --cols: 10;
   display: grid;
@@ -211,6 +232,15 @@ h1 {
 .levels {
   display: grid;
   gap: 10px;
+}
+
+.controls {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.controls .primary,
+.controls .warn {
+  grid-column: span 2;
 }
 
 .levels {

@@ -25,6 +25,8 @@
 
       <aside class="side" aria-label="游戏控制">
         <div class="stats">
+          <div class="stat"><span>关卡</span><strong id="stage">1</strong></div>
+          <div class="stat"><span>最高分</span><strong id="bestScore">0</strong></div>
           <div class="stat"><span>得分</span><strong id="score">0</strong></div>
           <div class="stat"><span>剩余</span><strong id="left">0</strong></div>
           <div class="stat"><span>连击</span><strong id="combo">0</strong></div>
@@ -41,8 +43,10 @@
 
         <div class="controls">
           <button type="button" id="newGame" class="primary">新游戏</button>
+          <button type="button" id="pause">暂停</button>
           <button type="button" id="hint">提示</button>
           <button type="button" id="shuffle" class="warn">洗牌</button>
+          <button type="button" id="sound">音效：开</button>
         </div>
 
         <div id="message" class="message" role="status">点击两张相同的牌开始。</div>
