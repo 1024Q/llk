@@ -47,6 +47,17 @@
           <input type="range" id="turnLimit" min="2" max="5" step="1" value="2">
         </label>
 
+        <div class="mode-controls" aria-label="模式">
+          <button type="button" id="normalMode" class="active">闯关模式</button>
+          <button type="button" id="dailyMode">每日挑战</button>
+        </div>
+
+        <div class="powerups" aria-label="道具">
+          <button type="button" id="powerBomb">炸弹 <span id="bombCount">1</span></button>
+          <button type="button" id="powerFreeze">冻结 <span id="freezeCount">1</span></button>
+          <button type="button" id="powerReveal">放大镜 <span id="revealCount">2</span></button>
+        </div>
+
         <div class="controls">
           <button type="button" id="newGame" class="primary">新游戏</button>
           <button type="button" id="pause">暂停</button>
@@ -56,9 +67,39 @@
         </div>
 
         <div id="message" class="message" role="status">点击两张相同的牌开始。</div>
+
+        <div class="leaderboard" aria-label="排行榜">
+          <strong>本地排行榜</strong>
+          <dl>
+            <div><dt>简单</dt><dd id="lbEasy">0</dd></div>
+            <div><dt>普通</dt><dd id="lbNormal">0</dd></div>
+            <div><dt>困难</dt><dd id="lbHard">0</dd></div>
+            <div><dt>每日</dt><dd id="lbDaily">0</dd></div>
+            <div><dt>最高关</dt><dd id="lbStage">1</dd></div>
+            <div><dt>最快</dt><dd id="lbFast">--</dd></div>
+            <div><dt>最长连击</dt><dd id="lbCombo">0</dd></div>
+          </dl>
+        </div>
       </aside>
     </section>
   </main>
+
+  <div id="resultModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+    <div class="modal-panel">
+      <h2 id="resultTitle">关卡完成</h2>
+      <p id="resultSummary"></p>
+      <div class="modal-stats">
+        <div><span>本关用时</span><strong id="resultTime">00:00</strong></div>
+        <div><span>奖励</span><strong id="resultBonus">0</strong></div>
+        <div><span>总分</span><strong id="resultScore">0</strong></div>
+        <div><span>最长连击</span><strong id="resultCombo">0</strong></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="nextStage" class="primary">下一关</button>
+        <button type="button" id="restartFromModal">重新开始</button>
+      </div>
+    </div>
+  </div>
 
   <script src="js/game.js"></script>
 </body>

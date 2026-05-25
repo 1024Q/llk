@@ -20,12 +20,40 @@ const pauseButton = document.querySelector("#pause");
 const soundButton = document.querySelector("#sound");
 const turnLimitInput = document.querySelector("#turnLimit");
 const turnLimitValueEl = document.querySelector("#turnLimitValue");
+const normalModeButton = document.querySelector("#normalMode");
+const dailyModeButton = document.querySelector("#dailyMode");
+const bombButton = document.querySelector("#powerBomb");
+const freezeButton = document.querySelector("#powerFreeze");
+const revealButton = document.querySelector("#powerReveal");
+const bombCountEl = document.querySelector("#bombCount");
+const freezeCountEl = document.querySelector("#freezeCount");
+const revealCountEl = document.querySelector("#revealCount");
+const resultModalEl = document.querySelector("#resultModal");
+const resultTitleEl = document.querySelector("#resultTitle");
+const resultSummaryEl = document.querySelector("#resultSummary");
+const resultTimeEl = document.querySelector("#resultTime");
+const resultBonusEl = document.querySelector("#resultBonus");
+const resultScoreEl = document.querySelector("#resultScore");
+const resultComboEl = document.querySelector("#resultCombo");
+const nextStageButton = document.querySelector("#nextStage");
+const restartFromModalButton = document.querySelector("#restartFromModal");
+const leaderboardEls = {
+  easy: document.querySelector("#lbEasy"),
+  normal: document.querySelector("#lbNormal"),
+  hard: document.querySelector("#lbHard"),
+  daily: document.querySelector("#lbDaily"),
+  stage: document.querySelector("#lbStage"),
+  fast: document.querySelector("#lbFast"),
+  combo: document.querySelector("#lbCombo")
+};
 
-const bestScoreKey = "llk-best-score";
+const legacyBestScoreKey = "llk-best-score";
+const leaderboardKey = "llk-leaderboard";
 const soundKey = "llk-sound-enabled";
 const turnLimitKey = "llk-turn-limit";
 
 let level = "normal";
+let dailyMode = false;
 let stage = 1;
 let rows = 0;
 let cols = 0;
@@ -33,21 +61,27 @@ let seconds = 0;
 let timeLeft = 0;
 let score = 0;
 let combo = 0;
+let longestComboRun = 0;
 let selected = null;
 let tiles = [];
 let timer = null;
+let shuffleCount = 0;
 let locked = false;
 let paused = false;
-let bestScore = Number(localStorage.getItem(bestScoreKey) || 0);
+let powerups = { bomb: 1, freeze: 1, reveal: 2 };
+let leaderboard = loadLeaderboard();
+let bestScore = getCurrentBestScore();
 let soundEnabled = localStorage.getItem(soundKey) !== "off";
 let turnLimit = clampTurnLimit(Number(localStorage.getItem(turnLimitKey) || 2));
 let audioContext = null;
 
 function startGame(resetProgress = true) {
+  hideResultModal();
   if (resetProgress) {
     stage = 1;
     score = 0;
     combo = 0;
+    longestComboRun = 0;
   }
 
   const config = getStageConfig();
@@ -58,12 +92,16 @@ function startGame(resetProgress = true) {
   selected = null;
   locked = false;
   paused = false;
+  shuffleCount = 0;
+  powerups = getStagePowerups();
+  bestScore = getCurrentBestScore();
   tiles = makeDeck(rows * cols);
   renderBoard();
   clearConnectionLine();
   updateControlStates();
   updateStats();
-  setMessage(`第 ${stage} 关开始，当前最多可转弯 ${turnLimit} 次。`);
+  updateLeaderboardView();
+  setMessage(`${getModeName()}第 ${stage} 关开始，当前最多可转弯 ${turnLimit} 次。`);
   clearInterval(timer);
   timer = setInterval(tick, 1000);
   ensureMove();
@@ -81,6 +119,14 @@ function getStageConfig() {
   };
 }
 
+function getStagePowerups() {
+  return {
+    bomb: 1,
+    freeze: stage % 3 === 0 ? 2 : 1,
+    reveal: dailyMode ? 1 : 2
+  };
+}
+
 function makeDeck(total) {
   const pairCount = total / 2;
   const deck = [];
@@ -88,7 +134,12 @@ function makeDeck(total) {
     const value = icons[i % icons.length];
     deck.push({ value, matched: false }, { value, matched: false });
   }
-  return shuffleArray(deck);
+  return shuffleArray(deck, getDeckRandom());
+}
+
+function getDeckRandom(salt = "deck") {
+  if (!dailyMode) return Math.random;
+  return createSeededRandom(`${getDailyKey()}-${level}-${stage}-${turnLimit}-${salt}`);
 }
 
 function renderBoard() {
@@ -131,27 +182,7 @@ function chooseTile(index) {
   selected = null;
   const path = tiles[previous].value === tile.value ? findConnectionPath(previous, index) : null;
   if (path) {
-    locked = true;
-    combo += 1;
-    score += 10 + combo * 2;
-    setMessage(combo > 2 ? `连击 ${combo}！` : "配对成功。");
-    showConnectionLine(path);
-    animateMatchedTiles(previous, index);
-    playSound("match");
-    updateStats();
-    setTimeout(() => {
-      tiles[previous].matched = true;
-      tile.matched = true;
-      clearConnectionLine();
-      locked = false;
-      updateTileClasses();
-      updateStats();
-      if (tiles.every(item => item.matched)) {
-        finish(true);
-      } else {
-        ensureMove();
-      }
-    }, 430);
+    clearMatchedPair(previous, index, path, 10 + combo * 2, true);
   } else {
     combo = 0;
     locked = true;
@@ -166,6 +197,33 @@ function chooseTile(index) {
   }
 }
 
+function clearMatchedPair(first, second, path, points, countCombo) {
+  locked = true;
+  if (countCombo) {
+    combo += 1;
+    longestComboRun = Math.max(longestComboRun, combo);
+  }
+  score += points;
+  setMessage(countCombo && combo > 2 ? `连击 ${combo}！` : "配对成功。");
+  showConnectionLine(path);
+  animateMatchedTiles(first, second);
+  playSound("match");
+  updateStats();
+  setTimeout(() => {
+    tiles[first].matched = true;
+    tiles[second].matched = true;
+    clearConnectionLine();
+    locked = false;
+    updateTileClasses();
+    updateStats();
+    if (tiles.every(item => item.matched)) {
+      finish(true);
+    } else {
+      ensureMove();
+    }
+  }, 430);
+}
+
 function canConnect(a, b) {
   return Boolean(findConnectionPath(a, b));
 }
@@ -176,7 +234,7 @@ function findConnectionPath(a, b) {
   const grid = buildGrid();
   const queue = [];
   const visited = Array.from({ length: rows + 2 }, () =>
-    Array.from({ length: cols + 2 }, () => Array(4).fill(4))
+    Array.from({ length: cols + 2 }, () => Array(4).fill(6))
   );
   const directions = [
     { r: -1, c: 0 },
@@ -343,7 +401,7 @@ function shuffleRemaining(showMessage = true) {
       values.push(tile.value);
     }
   });
-  const shuffledValues = shuffleArray(values);
+  const shuffledValues = shuffleArray(values, dailyMode ? getDeckRandom(`shuffle-${shuffleCount++}`) : Math.random);
   indexes.forEach((index, offset) => {
     tiles[index].value = shuffledValues[offset];
   });
@@ -359,7 +417,7 @@ function shuffleRemaining(showMessage = true) {
   }
 }
 
-function showHint() {
+function showHint(duration = 1200) {
   if (paused || locked || timeLeft <= 0) return;
   clearHints();
   const move = findMove();
@@ -373,7 +431,51 @@ function showHint() {
   move.forEach(index => boardEl.children[index].classList.add("hint"));
   setMessage("这两张可以连。");
   playSound("hint");
-  setTimeout(clearHints, 1200);
+  setTimeout(clearHints, duration);
+}
+
+function useBomb() {
+  if (!canUsePowerup("bomb")) return;
+  const move = findMove();
+  if (!move) {
+    setMessage("没有可炸掉的组合，先洗牌试试。");
+    return;
+  }
+  powerups.bomb -= 1;
+  combo = 0;
+  updatePowerupCounts();
+  const path = findConnectionPath(move[0], move[1]);
+  setMessage("炸弹消除一对牌。");
+  clearMatchedPair(move[0], move[1], path, 8, false);
+  playSound("bomb");
+}
+
+function useFreeze() {
+  if (!canUsePowerup("freeze")) return;
+  powerups.freeze -= 1;
+  timeLeft = Math.min(seconds, timeLeft + 15);
+  updatePowerupCounts();
+  updateStats();
+  setMessage("冻结时间，倒计时回补 15 秒。");
+  playSound("freeze");
+}
+
+function useReveal() {
+  if (!canUsePowerup("reveal")) return;
+  powerups.reveal -= 1;
+  updatePowerupCounts();
+  showHint(2600);
+}
+
+function canUsePowerup(name) {
+  if (paused || locked || timeLeft <= 0) return false;
+  if (powerups[name] <= 0) {
+    setMessage("这个道具已经用完了。");
+    playSound("miss");
+    return false;
+  }
+  unlockAudio();
+  return true;
 }
 
 function clearHints() {
@@ -401,28 +503,62 @@ function finish(won) {
   locked = true;
   selected = null;
   updateTileClasses();
+
+  const usedTime = seconds - Math.max(0, timeLeft);
   if (won) {
     const bonus = Math.max(0, timeLeft) + stage * 20;
     score += bonus;
-    saveBestScore();
+    saveRecords({ won: true, usedTime });
     updateStats();
-    setMessage(`第 ${stage} 关完成！奖励 ${bonus} 分，即将进入下一关。`);
+    setMessage(`第 ${stage} 关完成！`);
     playSound("win");
-    setTimeout(() => {
-      stage += 1;
-      startGame(false);
-    }, 1300);
+    showResultModal({
+      won: true,
+      usedTime,
+      bonus,
+      title: "关卡完成",
+      summary: dailyMode ? `每日挑战第 ${stage} 关完成。` : `第 ${stage} 关完成，准备进入下一关。`
+    });
     return;
   }
 
-  saveBestScore();
+  saveRecords({ won: false, usedTime });
   updateStats();
-  setMessage(`时间到了，最终得分 ${score}。点新游戏再来一局。`);
+  setMessage(`时间到了，最终得分 ${score}。`);
   playSound("over");
+  showResultModal({
+    won: false,
+    usedTime,
+    bonus: 0,
+    title: "挑战结束",
+    summary: "点重新开始再来一局。"
+  });
+}
+
+function showResultModal(result) {
+  resultTitleEl.textContent = result.title;
+  resultSummaryEl.textContent = result.summary;
+  resultTimeEl.textContent = formatTime(result.usedTime);
+  resultBonusEl.textContent = result.bonus;
+  resultScoreEl.textContent = score;
+  resultComboEl.textContent = longestComboRun;
+  nextStageButton.classList.toggle("hidden", !result.won);
+  resultModalEl.classList.remove("hidden");
+}
+
+function hideResultModal() {
+  resultModalEl.classList.add("hidden");
+}
+
+function continueToNextStage() {
+  if (timeLeft <= 0 && !tiles.every(tile => tile.matched)) return;
+  stage += 1;
+  startGame(false);
 }
 
 function updateStats() {
   const remaining = tiles.filter(tile => !tile.matched).length;
+  bestScore = getCurrentBestScore();
   stageEl.textContent = stage;
   bestScoreEl.textContent = bestScore;
   scoreEl.textContent = score;
@@ -430,6 +566,22 @@ function updateStats() {
   comboEl.textContent = combo;
   timeEl.textContent = formatTime(Math.max(0, timeLeft));
   timeBarEl.style.transform = `scaleX(${Math.max(0, timeLeft / seconds)})`;
+}
+
+function updatePowerupCounts() {
+  bombCountEl.textContent = powerups.bomb;
+  freezeCountEl.textContent = powerups.freeze;
+  revealCountEl.textContent = powerups.reveal;
+}
+
+function updateLeaderboardView() {
+  leaderboardEls.easy.textContent = leaderboard.best.easy;
+  leaderboardEls.normal.textContent = leaderboard.best.normal;
+  leaderboardEls.hard.textContent = leaderboard.best.hard;
+  leaderboardEls.daily.textContent = leaderboard.dailyBest[getDailyKey()] || 0;
+  leaderboardEls.stage.textContent = leaderboard.maxStage;
+  leaderboardEls.fast.textContent = leaderboard.fastestStage ? formatTime(leaderboard.fastestStage) : "--";
+  leaderboardEls.combo.textContent = leaderboard.longestCombo;
 }
 
 function formatTime(value) {
@@ -442,14 +594,69 @@ function setMessage(text) {
   messageEl.textContent = text;
 }
 
-function saveBestScore() {
-  if (score <= bestScore) return;
-  bestScore = score;
-  localStorage.setItem(bestScoreKey, String(bestScore));
+function saveRecords({ won, usedTime }) {
+  if (dailyMode) {
+    const key = getDailyKey();
+    leaderboard.dailyBest[key] = Math.max(leaderboard.dailyBest[key] || 0, score);
+  } else {
+    leaderboard.best[level] = Math.max(leaderboard.best[level] || 0, score);
+  }
+  if (won) {
+    leaderboard.maxStage = Math.max(leaderboard.maxStage || 1, stage);
+    if (leaderboard.fastestStage === null || usedTime < leaderboard.fastestStage) {
+      leaderboard.fastestStage = usedTime;
+    }
+  }
+  leaderboard.longestCombo = Math.max(leaderboard.longestCombo || 0, longestComboRun);
+  localStorage.setItem(leaderboardKey, JSON.stringify(leaderboard));
+  bestScore = getCurrentBestScore();
+  updateLeaderboardView();
+}
+
+function loadLeaderboard() {
+  const fallback = {
+    best: { easy: 0, normal: Number(localStorage.getItem(legacyBestScoreKey) || 0), hard: 0 },
+    dailyBest: {},
+    maxStage: 1,
+    fastestStage: null,
+    longestCombo: 0
+  };
+  try {
+    const saved = JSON.parse(localStorage.getItem(leaderboardKey));
+    return {
+      best: { ...fallback.best, ...(saved?.best || {}) },
+      dailyBest: saved?.dailyBest || {},
+      maxStage: saved?.maxStage || 1,
+      fastestStage: saved?.fastestStage || null,
+      longestCombo: saved?.longestCombo || 0
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function getCurrentBestScore() {
+  if (dailyMode) return leaderboard.dailyBest[getDailyKey()] || 0;
+  return leaderboard.best[level] || 0;
+}
+
+function getDailyKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getModeName() {
+  return dailyMode ? "每日挑战 " : "";
+}
+
+function setDailyMode(enabled) {
+  dailyMode = enabled;
+  dailyModeButton.classList.toggle("active", dailyMode);
+  normalModeButton.classList.toggle("active", !dailyMode);
+  startGame(true);
 }
 
 function togglePause() {
-  if (timeLeft <= 0) return;
+  if (timeLeft <= 0 || !resultModalEl.classList.contains("hidden")) return;
   paused = !paused;
   selected = null;
   clearHints();
@@ -473,6 +680,9 @@ function updateControlStates() {
   soundButton.textContent = soundEnabled ? "音效：开" : "音效：关";
   turnLimitInput.value = turnLimit;
   turnLimitValueEl.textContent = `${turnLimit} 次`;
+  dailyModeButton.classList.toggle("active", dailyMode);
+  normalModeButton.classList.toggle("active", !dailyMode);
+  updatePowerupCounts();
 }
 
 function changeTurnLimit() {
@@ -513,7 +723,9 @@ function playSound(type) {
     pause: [220, 0.08, "sine", 0.035],
     resume: [440, 0.08, "sine", 0.04],
     win: [760, 0.16, "triangle", 0.07],
-    over: [130, 0.22, "sine", 0.05]
+    over: [130, 0.22, "sine", 0.05],
+    bomb: [90, 0.18, "sawtooth", 0.065],
+    freeze: [880, 0.12, "sine", 0.045]
   };
   const [frequency, duration, wave, gainValue] = presets[type] || presets.tap;
   const now = audioContext.currentTime;
@@ -532,13 +744,28 @@ function playSound(type) {
   oscillator.stop(now + duration + 0.02);
 }
 
-function shuffleArray(array) {
+function shuffleArray(array, random = Math.random) {
   const result = [...array];
   for (let i = result.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(random() * (i + 1));
     [result[i], result[j]] = [result[j], result[i]];
   }
   return result;
+}
+
+function createSeededRandom(seedText) {
+  let seed = 2166136261;
+  for (let i = 0; i < seedText.length; i += 1) {
+    seed ^= seedText.charCodeAt(i);
+    seed = Math.imul(seed, 16777619);
+  }
+  return () => {
+    seed += 0x6D2B79F5;
+    let value = seed;
+    value = Math.imul(value ^ value >>> 15, value | 1);
+    value ^= value + Math.imul(value ^ value >>> 7, value | 61);
+    return ((value ^ value >>> 14) >>> 0) / 4294967296;
+  };
 }
 
 document.querySelector("#newGame").addEventListener("click", () => {
@@ -546,11 +773,18 @@ document.querySelector("#newGame").addEventListener("click", () => {
   playSound("tap");
   startGame(true);
 });
-document.querySelector("#hint").addEventListener("click", showHint);
+document.querySelector("#hint").addEventListener("click", () => showHint());
 document.querySelector("#shuffle").addEventListener("click", () => shuffleRemaining(true));
 pauseButton.addEventListener("click", togglePause);
 soundButton.addEventListener("click", toggleSound);
 turnLimitInput.addEventListener("input", changeTurnLimit);
+normalModeButton.addEventListener("click", () => setDailyMode(false));
+dailyModeButton.addEventListener("click", () => setDailyMode(true));
+bombButton.addEventListener("click", useBomb);
+freezeButton.addEventListener("click", useFreeze);
+revealButton.addEventListener("click", useReveal);
+nextStageButton.addEventListener("click", continueToNextStage);
+restartFromModalButton.addEventListener("click", () => startGame(true));
 levelButtons.forEach(button => {
   button.addEventListener("click", () => {
     unlockAudio();
@@ -562,4 +796,5 @@ levelButtons.forEach(button => {
 });
 
 updateControlStates();
+updateLeaderboardView();
 startGame(true);

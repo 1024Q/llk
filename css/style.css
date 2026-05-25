@@ -19,6 +19,10 @@
   box-sizing: border-box;
 }
 
+.hidden {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -229,7 +233,9 @@ body.paused .board-stage::after {
 }
 
 .controls,
-.levels {
+.levels,
+.mode-controls,
+.powerups {
   display: grid;
   gap: 10px;
 }
@@ -245,6 +251,27 @@ body.paused .board-stage::after {
 
 .levels {
   grid-template-columns: repeat(3, 1fr);
+}
+
+.mode-controls,
+.powerups {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.powerups {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.powerups button {
+  min-height: 50px;
+  font-size: 13px;
+}
+
+.powerups span {
+  display: block;
+  margin-top: 2px;
+  color: var(--rose);
+  font-size: 18px;
 }
 
 .turn-control {
@@ -318,6 +345,105 @@ button.active {
   background: #edf7f5;
   color: var(--teal-dark);
   line-height: 1.45;
+}
+
+.leaderboard {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.leaderboard > strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.leaderboard dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.leaderboard div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.leaderboard dt {
+  color: var(--muted);
+}
+
+.leaderboard dd {
+  margin: 0;
+  font-weight: 800;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(23, 33, 43, 0.42);
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-panel {
+  width: min(460px, 100%);
+  padding: 20px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.modal-panel h2 {
+  margin: 0 0 8px;
+  font-size: 28px;
+}
+
+.modal-panel p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.modal-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.modal-stats div {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.modal-stats span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.modal-stats strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 24px;
+}
+
+.modal-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .progress {
